@@ -207,6 +207,7 @@ def run_training():
     margin_2 = args.margin_2
     beta = args.beta
     
+    best_acc = 0
     for i in range(1, args.epochs + 1):
         running_loss = 0.0
         correct_sum = 0
@@ -284,12 +285,13 @@ def run_training():
             acc = np.around(acc.numpy(),4)
             print("[Epoch %d] Validation accuracy:%.4f. Loss:%.3f" % (i, acc, running_loss))
            
-            if acc > 0.87 :
+            if acc > 0.86 and acc > best_acc:
                 torch.save({'iter': i,
                             'model_state_dict': res18.state_dict(),
                              'optimizer_state_dict': optimizer.state_dict(),},
                             os.path.join('models', "epoch"+str(i)+"_acc"+str(acc)+".pth"))
                 print('Model saved.')
+                best_acc = acc
      
             
 if __name__ == "__main__":                    
