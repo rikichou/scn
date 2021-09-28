@@ -14,9 +14,9 @@ import argparse,random
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_root', type=str, default='datasets', help='facial expression dataset path.')
-    parser.add_argument('--train_label_path', type=str, default='datasets/train.txt', help='facial expression dataset label.')
-    parser.add_argument('--val_label_path', type=str, default='datasets/val.txt', help='facial expression dataset label.')
+    parser.add_argument('data_root', type=str, default='datasets', help='facial expression dataset path.')
+    parser.add_argument('train_label_path', type=str, default='datasets/train.txt', help='facial expression dataset label.')
+    parser.add_argument('val_label_path', type=str, default='datasets/val.txt', help='facial expression dataset label.')
     parser.add_argument('--checkpoint', type=str, default=None,
                         help='Pytorch checkpoint file path')
     parser.add_argument('--pretrained', type=str, default=None,
@@ -35,21 +35,23 @@ def parse_args():
     return parser.parse_args()
 
 
-class RafDataSetFatigue(data.Dataset):
+class CommonDataSet(data.Dataset):
     def __init__(self, data_root_dir, label_path, transform=None, basic_aug=False):
         self.transform = transform
         self.data_root_dir = data_root_dir
 
         NAME_COLUMN = 0
         LABEL_COLUMN = 1
-        df = pd.read_csv(label_path, sep=' ', header=None)
+        RECT_COLUMN = 2
+        df = pd.read_csv(label_path, sep=';', header=None)
         dataset = df
         file_names = dataset.iloc[:, NAME_COLUMN].values
-        # self.label = dataset.iloc[:, LABEL_COLUMN].values - 1 # 0:Surprise, 1:Fear, 2:Disgust, 3:Happiness, 4:Sadness, 5:Anger, 6:Neutral
         labels = dataset.iloc[:, LABEL_COLUMN].values  # 0:Neutral, 1:Happy, 2:Sad, 3:Angry
+        facerects = dataset.iloc[:, RECT_COLUMN:].values
 
         self.file_paths = []
         self.label = []
+        self.facerects = []
         # use raf aligned images for training/testing
         for idx,f in enumerate(file_names):
             # f = f.split(".")[0]
@@ -60,6 +62,7 @@ class RafDataSetFatigue(data.Dataset):
                 continue
             self.file_paths.append(path)
             self.label.append(labels[idx])
+            self.facerects.append(facerects[idx])
         assert len(self.label)==len(self.file_paths), "label lenght {} not equal to filepath length {}".format(len(self.label), len(self.file_paths))
 
         # debug
@@ -73,16 +76,47 @@ class RafDataSetFatigue(data.Dataset):
     def __len__(self):
         return len(self.file_paths)
 
+    def get_input_face(self, image, rect):
+        sx, sy, ex, ey = rect
+        if len(image.shape) < 3:
+            h, w = image.shape
+        else:
+            h, w, c = image.shape
+        faceh = ey - sy
+        facew = ex - sx
+
+        longsize = max(faceh, facew)
+        expendw = longsize - facew
+        expendh = longsize - faceh
+
+        sx = sx - (expendw / 2)
+        ex = ex + (expendw / 2)
+        sy = sy - (expendh / 2)
+        ey = ey + (expendh / 2)
+
+        sx = int(max(0, sx))
+        sy = int(max(0, sy))
+        ex = int(min(w - 1, ex))
+        ey = int(min(h - 1, ey))
+
+        if len(image.shape) < 3:
+            return image[sy:ey, sx:ex]
+        else:
+            return image[sy:ey, sx:ex, :]
+
     def __getitem__(self, idx):
         path = self.file_paths[idx]
+
+        # read face image
         image = cv2.imread(path)
+        face_rect = self.facerects[idx]
+        image = self.get_input_face(image, face_rect)
         image = image[:, :, ::-1]  # BGR to RGB
         label = self.label[idx]
         # augmentation
-        if self.phase == 'train':
-            if self.basic_aug and random.uniform(0, 1) > 0.5:
-                index = random.randint(0, 1)
-                image = self.aug_func[index](image)
+        if self.basic_aug and random.uniform(0, 1) > 0.5:
+            index = random.randint(0, 1)
+            image = self.aug_func[index](image)
 
         if self.transform is not None:
             image = self.transform(image)
@@ -227,7 +261,7 @@ def run_training():
         transforms.RandomErasing(scale=(0.02,0.25))])
     
     #train_dataset = RafDataSet(args.raf_path, phase = 'train', label_name = 'affectnet_train.txt', transform = data_transforms, basic_aug = True)
-    train_dataset = RafDataSetFatigue(args.data_root, label_path=args.train_label_path,
+    train_dataset = CommonDataSet(args.data_root, label_path=args.train_label_path,
                                transform=data_transforms, basic_aug=True)
     
     print('Train set size:', train_dataset.__len__())
@@ -242,8 +276,9 @@ def run_training():
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225])])                                           
-    val_dataset = RafDataSet(args.raf_path, phase = 'val', label_name = 'affectnet_val.txt', transform = data_transforms_val)    
+                                 std=[0.229, 0.224, 0.225])])
+    val_dataset = CommonDataSet(args.data_root, label_path=args.val_label_path,
+                                  transform=data_transforms_val)
     print('Validation set size:', val_dataset.__len__())
     
     val_loader = torch.utils.data.DataLoader(val_dataset,
