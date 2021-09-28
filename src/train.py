@@ -14,7 +14,9 @@ import argparse,random
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--raf_path', type=str, default='datasets/raf-basic/', help='Raf-DB dataset path.')
+    parser.add_argument('--data_root', type=str, default='datasets', help='facial expression dataset path.')
+    parser.add_argument('--train_label_path', type=str, default='datasets/train.txt', help='facial expression dataset label.')
+    parser.add_argument('--val_label_path', type=str, default='datasets/val.txt', help='facial expression dataset label.')
     parser.add_argument('--checkpoint', type=str, default=None,
                         help='Pytorch checkpoint file path')
     parser.add_argument('--pretrained', type=str, default=None,
@@ -31,7 +33,62 @@ def parse_args():
     parser.add_argument('--epochs', type=int, default=70, help='Total training epochs.')
     parser.add_argument('--drop_rate', type=float, default=0, help='Drop out rate.')
     return parser.parse_args()
-    
+
+
+class RafDataSetFatigue(data.Dataset):
+    def __init__(self, data_root_dir, label_path, transform=None, basic_aug=False):
+        self.transform = transform
+        self.data_root_dir = data_root_dir
+
+        NAME_COLUMN = 0
+        LABEL_COLUMN = 1
+        df = pd.read_csv(label_path, sep=' ', header=None)
+        dataset = df
+        file_names = dataset.iloc[:, NAME_COLUMN].values
+        # self.label = dataset.iloc[:, LABEL_COLUMN].values - 1 # 0:Surprise, 1:Fear, 2:Disgust, 3:Happiness, 4:Sadness, 5:Anger, 6:Neutral
+        labels = dataset.iloc[:, LABEL_COLUMN].values  # 0:Neutral, 1:Happy, 2:Sad, 3:Angry
+
+        self.file_paths = []
+        self.label = []
+        # use raf aligned images for training/testing
+        for idx,f in enumerate(file_names):
+            # f = f.split(".")[0]
+            # f = f +"_aligned.jpg"
+            path = os.path.join(self.data_root_dir, f)
+            if not os.path.exists(path):
+                print("{} not exist!".format(path))
+                continue
+            self.file_paths.append(path)
+            self.label.append(labels[idx])
+        assert len(self.label)==len(self.file_paths), "label lenght {} not equal to filepath length {}".format(len(self.label), len(self.file_paths))
+
+        # debug
+        nplabel = np.array(self.label)
+        print("Get {} file samples!".format(len(self.label)))
+        print("Angry:{}, Happy:{}, Neutral:{}, Sad:{}".format(sum(nplabel==0), sum(nplabel==1), sum(nplabel==2), sum(nplabel==3)))
+
+        self.basic_aug = basic_aug
+        self.aug_func = [image_utils.flip_image, image_utils.add_gaussian_noise]
+
+    def __len__(self):
+        return len(self.file_paths)
+
+    def __getitem__(self, idx):
+        path = self.file_paths[idx]
+        image = cv2.imread(path)
+        image = image[:, :, ::-1]  # BGR to RGB
+        label = self.label[idx]
+        # augmentation
+        if self.phase == 'train':
+            if self.basic_aug and random.uniform(0, 1) > 0.5:
+                index = random.randint(0, 1)
+                image = self.aug_func[index](image)
+
+        if self.transform is not None:
+            image = self.transform(image)
+
+        return image, label, idx
+
 class RafDataSet(data.Dataset):
     def __init__(self, raf_path, phase, label_name = None, transform = None, basic_aug = False):
         self.phase = phase
@@ -169,7 +226,9 @@ def run_training():
                                  std=[0.229, 0.224, 0.225]),
         transforms.RandomErasing(scale=(0.02,0.25))])
     
-    train_dataset = RafDataSet(args.raf_path, phase = 'train', label_name = 'affectnet_train.txt', transform = data_transforms, basic_aug = True)    
+    #train_dataset = RafDataSet(args.raf_path, phase = 'train', label_name = 'affectnet_train.txt', transform = data_transforms, basic_aug = True)
+    train_dataset = RafDataSetFatigue(args.data_root, label_path=args.train_label_path,
+                               transform=data_transforms, basic_aug=True)
     
     print('Train set size:', train_dataset.__len__())
     train_loader = torch.utils.data.DataLoader(train_dataset,
