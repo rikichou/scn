@@ -33,27 +33,31 @@ def parse_args():
     return parser.parse_args()
     
 class RafDataSet(data.Dataset):
-    def __init__(self, raf_path, phase, transform = None, basic_aug = False):
+    def __init__(self, raf_path, phase, label_name = None, transform = None, basic_aug = False):
         self.phase = phase
         self.transform = transform
         self.raf_path = raf_path
 
         NAME_COLUMN = 0
         LABEL_COLUMN = 1
-        df = pd.read_csv(os.path.join(self.raf_path, 'EmoLabel/list_patition_label.txt'), sep=' ', header=None)
+        df = pd.read_csv(os.path.join(self.raf_path, label_name), sep=' ', header=None)
         if phase == 'train':
-            dataset = df[df[NAME_COLUMN].str.startswith('train')]
+            dataset = df[df[NAME_COLUMN].str.startswith(phase)]
         else:
-            dataset = df[df[NAME_COLUMN].str.startswith('test')]
+            dataset = df[df[NAME_COLUMN].str.startswith(phase)]
         file_names = dataset.iloc[:, NAME_COLUMN].values
-        self.label = dataset.iloc[:, LABEL_COLUMN].values - 1 # 0:Surprise, 1:Fear, 2:Disgust, 3:Happiness, 4:Sadness, 5:Anger, 6:Neutral
-        
+        #self.label = dataset.iloc[:, LABEL_COLUMN].values - 1 # 0:Surprise, 1:Fear, 2:Disgust, 3:Happiness, 4:Sadness, 5:Anger, 6:Neutral
+        self.label = dataset.iloc[:, LABEL_COLUMN].values # 0:Neutral, 1:Happy, 2:Sad, 3:Angry
+        print(self.label)
         self.file_paths = []
         # use raf aligned images for training/testing
         for f in file_names:
-            f = f.split(".")[0]
-            f = f +"_aligned.jpg"
-            path = os.path.join(self.raf_path, 'Image/aligned', f)
+            # f = f.split(".")[0]
+            # f = f +"_aligned.jpg"
+            path = os.path.join(self.raf_path, f)
+            if not os.path.exists(path):
+                print("{} not exist!".format(path))
+                continue
             self.file_paths.append(path)
         
         self.basic_aug = basic_aug
@@ -79,7 +83,7 @@ class RafDataSet(data.Dataset):
         return image, label, idx
 
 class Res18Feature(nn.Module):
-    def __init__(self, pretrained = True, num_classes = 7, drop_rate = 0):
+    def __init__(self, pretrained = True, num_classes = 4, drop_rate = 0):
         super(Res18Feature, self).__init__()
         self.drop_rate = drop_rate
         resnet  = models.resnet18(pretrained)
@@ -165,7 +169,7 @@ def run_training():
                                  std=[0.229, 0.224, 0.225]),
         transforms.RandomErasing(scale=(0.02,0.25))])
     
-    train_dataset = RafDataSet(args.raf_path, phase = 'train', transform = data_transforms, basic_aug = True)    
+    train_dataset = RafDataSet(args.raf_path, phase = 'train', label_name = 'affectnet_train.txt', transform = data_transforms, basic_aug = True)    
     
     print('Train set size:', train_dataset.__len__())
     train_loader = torch.utils.data.DataLoader(train_dataset,
@@ -180,7 +184,7 @@ def run_training():
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])])                                           
-    val_dataset = RafDataSet(args.raf_path, phase = 'test', transform = data_transforms_val)    
+    val_dataset = RafDataSet(args.raf_path, phase = 'val', label_name = 'affectnet_val.txt', transform = data_transforms_val)    
     print('Validation set size:', val_dataset.__len__())
     
     val_loader = torch.utils.data.DataLoader(val_dataset,
@@ -285,11 +289,11 @@ def run_training():
             acc = np.around(acc.numpy(),4)
             print("[Epoch %d] Validation accuracy:%.4f. Loss:%.3f" % (i, acc, running_loss))
            
-            if acc > 0.86 and acc > best_acc:
+            if acc > 0.6 and acc > best_acc:
                 torch.save({'iter': i,
                             'model_state_dict': res18.state_dict(),
                              'optimizer_state_dict': optimizer.state_dict(),},
-                            os.path.join('models', "epoch"+str(i)+"_acc"+str(acc)+".pth"))
+                            os.path.join('models_aff', "epoch"+str(i)+"_acc"+str(acc)+".pth"))
                 print('Model saved.')
                 best_acc = acc
      
