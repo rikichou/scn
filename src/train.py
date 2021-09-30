@@ -66,7 +66,8 @@ class CommonDataSet(data.Dataset):
         assert len(self.label)==len(self.file_paths), "label lenght {} not equal to filepath length {}".format(len(self.label), len(self.file_paths))
 
         # debug
-        nplabel = np.array(self.label)
+        self.label = np.array(self.label)
+        nplabel = self.label
         print("Get {} file samples!".format(len(self.label)))
         print("Angry:{}, Happy:{}, Neutral:{}, Sad:{}".format(sum(nplabel==0), sum(nplabel==1), sum(nplabel==2), sum(nplabel==3)))
 
