@@ -22,7 +22,7 @@ def parse_args():
     parser.add_argument('--pretrained', type=str, default=None,
                         help='Pretrained weights')
     parser.add_argument('--beta', type=float, default=0.7, help='Ratio of high importance group in one mini-batch.')
-    parser.add_argument('--relabel_epoch', type=int, default=10, help='Relabeling samples on each mini-batch after 10(Default) epochs.')
+    parser.add_argument('--relabel_epoch', type=int, default=5, help='Relabeling samples on each mini-batch after 10(Default) epochs.')
     parser.add_argument('--margin_1', type=float, default=0.15, help='Rank regularization margin. Details described in the paper.')
     parser.add_argument('--margin_2', type=float, default=0.2, help='Relabeling margin. Details described in the paper.')
     parser.add_argument('--batch_size', type=int, default=256, help='Batch size.')
